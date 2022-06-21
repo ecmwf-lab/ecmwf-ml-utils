@@ -33,9 +33,7 @@ extras_require = {}
 setuptools.setup(
     name=package_name,
     version=version,
-    description=(
-        "An experimental package for various ml tools"  # noqa: E501
-    ),
+    description=("An experimental package for various ml tools"),  # noqa: E501
     long_description=read("README.md"),
     long_description_content_type="text/markdown",
     author="Florian Pinault",
@@ -44,13 +42,11 @@ setuptools.setup(
     license="Apache License Version 2.0",
     packages=setuptools.find_packages(),
     include_package_data=True,
-    install_requires=[
-    "climetlab>=0.11.0"
-    ],
+    install_requires=["climetlab>=0.11.0"],
     extras_require=extras_require,
     zip_safe=True,
     entry_points={
-    # for cli
+        # for cli
     },
     keywords="meteorology",
     classifiers=[

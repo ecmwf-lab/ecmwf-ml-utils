@@ -11,7 +11,3 @@ def get_version():
 
 
 __version__ = get_version()
-
-print(
-    f"WARNING: {__file__} is an empty package. Do a git clone an install it with pip locally."
-)
