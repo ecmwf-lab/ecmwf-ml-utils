@@ -24,8 +24,9 @@ from weatherbench_common import MyDataset
 
 # ds = cml.load_dataset( 'weatherbench', parameter = "geopotential_500", year = list(range(2015,2019)),).to_xarray()
 ds = MyDataset(
-    "local",
-    "/perm/mafp/weather-bench-links/data-from-mat-chantry-symlinks-to-files-2015-2016-2017-2018/grib",
+    "directory",
+    "/perm/mafp/weather-bench-links/data-from-mat-chantry-symlinks-to-files",
+    #"/perm/mafp/weather-bench-links/data-from-mat-chantry-symlinks-to-files-2015-2016-2017-2018/grib",
     param="z",
     level="500",
 )
