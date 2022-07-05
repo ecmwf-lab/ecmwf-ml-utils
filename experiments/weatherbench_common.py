@@ -1,3 +1,5 @@
+from tkinter import W
+
 import climetlab as cml
 import numpy as np
 import pandas as pd
@@ -7,15 +9,18 @@ import pandas as pd
 # from tensorflow.keras.layers import *
 # import tensorflow.keras.backend as K
 import torch
+from climetlab.profiling import call_counter
 
 FREQ = "30d"
 # FREQ = "1d"
+
 
 class MyDataset:
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
-        self.kwargs["time"] = "0000"
+
+    #   self.kwargs["time"] = "0000"
 
     @property
     def source(self):
@@ -33,9 +38,10 @@ class MyDataset:
     def to_numpy(self, *args, **kwargs):
         return self.source.to_numpy(*args, **kwargs)
 
-    def sel(self, time=None, **kwargs):
-        new_kwargs = {k: v for k, v in self.kwargs.items()}
+        # def sel(self, *args, **kwargs):
+        return self.source.sel(*args, **kwargs)
 
+    def sel(self, time=None, **kwargs):
         if time is not None:
             if not isinstance(time, slice):
                 time = slice(time, time)
@@ -44,10 +50,8 @@ class MyDataset:
             dates = list(
                 pd.date_range(start=start, end=end, freq=FREQ).strftime("%Y%m%d")
             )
-            new_kwargs["date"] = dates
-
-        new_kwargs.update(kwargs)
-        return MyDataset(*self.args, **new_kwargs)
+            kwargs["date"] = dates
+        return self.source.sel(**kwargs)
 
     def __getitem__(self, param):
         return self.sel(param=param)
@@ -81,22 +85,5 @@ class MyDataset:
             ),
         )
 
-    def to_pytorch(self, offset):
-        return WrapperWeatherBenchDataset(self, offset)
-
-class WrapperWeatherBenchDataset(torch.utils.data.Dataset):
-    def __init__(self, ds, offset) -> None:
-        super().__init__()
-
-        self.ds = ds.source
-
-        self.stats = self.ds.statistics()
-        self.offset = offset
-
-    def __len__(self):
-        """Returns the length of the dataset. This is important! Pytorch must know this."""
-        return self.stats["count"] - self.offset
-
-    def __getitem__(self, i):  # -> Tuple[np.ndarray, ...]:
-        """Returns the i-th sample (x, y). Pytorch will take care of the shuffling after each epoch."""
-        return self.ds[i].to_numpy(), self.ds[i + self.offset].to_numpy()
+    def to_pytorch(self, *args, **kwargs):
+        return self.source.to_pytorch(*args, **kwargs)

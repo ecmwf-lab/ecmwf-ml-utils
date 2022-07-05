@@ -15,14 +15,11 @@ import tensorflow.keras.backend as K
 import xarray as xr
 from tensorflow.keras.layers import *
 from tqdm import tqdm
-
-
 from weatherbench_common import MyDataset
-
 
 # ds = cml.load_dataset( 'weatherbench', parameter = "geopotential_500", year = list(range(2015,2019)),).to_xarray()
 ds = MyDataset(
-    "local",
+    "directory",
     "/perm/mafp/weather-bench-links/data-from-mat-chantry-symlinks-to-files-2015-2016-2017-2018/grib",
     param="z",
     level="500",
@@ -50,6 +47,10 @@ def fixit(x):
 dg_train = fixit(ds_train)
 dg_test = fixit(ds_test)
 dg_valid = fixit(ds_valid)
+
+print(dg_train)
+print(dg_train.take(1))
+print("--------")
 
 
 class PeriodicPadding2D(tf.keras.layers.Layer):
@@ -184,323 +185,323 @@ cnn.fit(
 print("Training is finished.")
 exit()
 
-## 
-## # We can save the weights to load later
-## # cnn.save_weights('test.h5')
-## 
-## # Here's one I trained earlier
-## # cnn_long_training.load_weights('cnn_6h.h5')
-## 
-## # ## Create predictions
-## #
-## # Now that we have our model we need to create a prediction xarray object. This function does this.
-## #
-## # Depending on the model we trained we might have a model that directly predicts 3/5 days, or one that only predicts in 6hr steps.
-## # With a direct approach, we would use the method below to construct our prediction.
-## #
-## # With the iterative approach we would use `create_iterative_predictions` (see futher below) to iterate foreward to our desired lead times.
-## 
-## 
-## def create_predictions(model, dg):
-##     """Create predictions for non-iterative model"""
-##     preds = model.predict_generator(dg)
-##     # Unnormalize
-##     preds = preds * dg.std.values + dg.mean.values
-##     fcs = []
-##     lev_idx = 0
-##     for var, levels in dg.var_dict.items():
-##         if levels is None:
-##             fcs.append(
-##                 xr.DataArray(
-##                     preds[:, :, :, lev_idx],
-##                     dims=["time", "lat", "lon"],
-##                     coords={"time": dg.valid_time, "lat": dg.ds.lat, "lon": dg.ds.lon},
-##                     name=var,
-##                 )
-##             )
-##             lev_idx += 1
-##         else:
-##             nlevs = len(levels)
-##             fcs.append(
-##                 xr.DataArray(
-##                     preds[:, :, :, lev_idx : lev_idx + nlevs],
-##                     dims=["time", "lat", "lon", "level"],
-##                     coords={
-##                         "time": dg.valid_time,
-##                         "lat": dg.ds.lat,
-##                         "lon": dg.ds.lon,
-##                         "level": levels,
-##                     },
-##                     name=var,
-##                 )
-##             )
-##             lev_idx += nlevs
-##     return xr.merge(fcs)
-## 
-## 
-## # We won't use this here as we've made a model designed to predict only 6hr forward, so we will need to chain predictions together to reach 3 & 5 days.
-## 
-## # fc = create_predictions(cnn, dg_test)
-## # compute_weighted_rmse(fc, valid).compute()
-## 
-## # Here create a function for creating predictions for longer lead times by chaining increments together.
-## def create_iterative_predictions(model, dg, max_lead_time=5 * 24):
-##     state = dg.data[: dg.n_samples]
-##     preds = []
-##     # Do the prediction
-##     for _ in tqdm(range(max_lead_time // dg.lead_time)):
-##         state = model.predict(state)
-##         p = state * dg.std.values + dg.mean.values
-##         preds.append(p)
-##     preds = np.array(preds)
-## 
-##     # Create the xarray object
-##     lead_time = np.arange(dg.lead_time, max_lead_time + dg.lead_time, dg.lead_time)
-##     das = []
-##     lev_idx = 0
-##     for var, levels in dg.var_dict.items():
-##         if levels is None:
-##             das.append(
-##                 xr.DataArray(
-##                     preds[:, :, :, :, lev_idx],
-##                     dims=["lead_time", "time", "lat", "lon"],
-##                     coords={
-##                         "lead_time": lead_time,
-##                         "time": dg.init_time,
-##                         "lat": dg.ds.lat,
-##                         "lon": dg.ds.lon,
-##                     },
-##                     name=var,
-##                 )
-##             )
-##             lev_idx += 1
-##         else:
-##             nlevs = len(levels)
-##             das.append(
-##                 xr.DataArray(
-##                     preds[:, :, :, :, lev_idx : lev_idx + nlevs],
-##                     dims=["lead_time", "time", "lat", "lon", "level"],
-##                     coords={
-##                         "lead_time": lead_time,
-##                         "time": dg.init_time,
-##                         "lat": dg.ds.lat,
-##                         "lon": dg.ds.lon,
-##                         "level": levels,
-##                     },
-##                     name=var,
-##                 )
-##             )
-##             lev_idx += nlevs
-##     return xr.merge(das)
-## 
-## 
-## # %% [markdown]
-## # ### Let's evalute our model on the test set.
-## # We'll roll the model out for 5 days and evaluate it.
-## 
-## # %%
-## fc_iter = create_iterative_predictions(cnn, dg_test)
-## 
-## # %%
-## rmse = evaluate_iterative_forecast(fc_iter, ds_test, func=compute_weighted_rmse)
-## rmse.load()
-## 
-## # %% [markdown]
-## # ### Let's look at the error at 3 days
-## 
-## # %%
-## display(rmse.sel(lead_time=3 * 24))
-## 
-## # %% [markdown]
-## # ### Plot the headline scores against a few benchmarks
-## 
-## # %%
-## rmse.z.plot(label="CNN")
-## plt.plot([3 * 24, 5 * 24], [154, 334], "x", label="Operational IFS", markersize=8)
-## plt.plot([3 * 24, 5 * 24], [489, 743], ".", label="T42 IFS", markersize=8)
-## plt.plot([3 * 24, 5 * 24], [175, 350], "o", label="Keisler GNN (2022)", markersize=8)
-## plt.legend()
-## 
-## # %% [markdown]
-## # ### Our model lags a long way behind the Operational IFS.
-## #
-## # However as you can see, [Keisler's GraphNN](https://arxiv.org/pdf/2202.07575) produced very comparable values. However there are some caveats with that work, as you integrate forward in time the images become blurred, scoring very well on RMSE but not capturing extreme values. More work will be required to establish if ML can produce sharp yet well scoring predictions.
-## #
-## # Note that the test sets are not identical between our experiments and the others (due to time constraints), but we would expect to see only small differences with a different test set.
-## #
-## # ### Let's visualise our prediction
-## #
-## # This plotting is taken from [here](https://github.com/pangeo-data/WeatherBench/blob/master/notebooks/4-evaluation.ipynb), where Rasp et al. show how to do a complete evaluation of a model.
-## 
-## import warnings
-## 
-## # %%
-## import cartopy.crs as ccrs
-## import matplotlib.cbook
-## 
-## warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
-## 
-## cmap_z = "cividis"
-## cmap_t = "RdYlBu_r"
-## cmap_diff = "bwr"
-## cmap_error = "BrBG"
-## 
-## 
-## def imcol(ax, data, title="", **kwargs):
-##     if not "vmin" in kwargs.keys():
-##         mx = np.abs(data.max().values)
-##         kwargs["vmin"] = -mx
-##         kwargs["vmax"] = mx
-##     #     I = ax.imshow(data, origin='lower',  **kwargs)
-##     I = data.plot(
-##         ax=ax,
-##         transform=ccrs.PlateCarree(),
-##         add_colorbar=False,
-##         add_labels=False,
-##         rasterized=True,
-##         **kwargs,
-##     )
-##     cb = fig.colorbar(I, ax=ax, orientation="horizontal", pad=0.01, shrink=0.90)
-##     ax.set_title(title)
-##     ax.coastlines(alpha=0.5)
-##     return
-## 
-## 
-## fig, axs = plt.subplots(
-##     2, 5, figsize=(18, 8), subplot_kw={"projection": ccrs.PlateCarree()}
-## )
-## # True
-## for iax, var, cmap, r, t in zip(
-##     [0], ["z"], [cmap_z], [[47000, 58000]], [r"Z500 [m$^2$ s$^{-2}$]"]
-## ):
-##     imcol(
-##         axs[iax, 0],
-##         ds_test[var].isel(time=0),
-##         cmap=cmap,
-##         vmin=r[0],
-##         vmax=r[1],
-##         title=f"ERA5 {t} t=0h",
-##     )
-##     imcol(
-##         axs[iax, 1],
-##         ds_test[var].isel(time=6),
-##         cmap=cmap,
-##         vmin=r[0],
-##         vmax=r[1],
-##         title=f"ERA5 {t} t=6h",
-##     )
-##     imcol(
-##         axs[iax, 2],
-##         ds_test[var].isel(time=6) - ds_test[var].isel(time=0),
-##         cmap=cmap_diff,
-##         title=f"ERA5 {t} diff (6h-0h)",
-##     )
-##     imcol(
-##         axs[iax, 3],
-##         ds_test[var].isel(time=5 * 24),
-##         cmap=cmap,
-##         vmin=r[0],
-##         vmax=r[1],
-##         title=f"ERA5 {t} t=5d",
-##     )
-##     imcol(
-##         axs[iax, 4],
-##         ds_test[var].isel(time=5 * 24) - ds_test[var].isel(time=0),
-##         cmap=cmap_diff,
-##         title=f"ERA5 {t} diff (5d-0h)",
-##     )
-## 
-## # CNN
-## for iax, var, cmap, r, t in zip(
-##     [1], ["z"], [cmap_z], [[47000, 58000]], [r"Z500 [m$^2$ s$^{-2}$]"]
-## ):
-##     imcol(
-##         axs[iax, 0],
-##         ds_test[var].isel(time=0),
-##         cmap=cmap,
-##         vmin=r[0],
-##         vmax=r[1],
-##         title=f"ERA5 {t} t=0h",
-##     )
-##     imcol(
-##         axs[iax, 1],
-##         fc_iter[var].isel(time=0).sel(lead_time=6),
-##         cmap=cmap,
-##         vmin=r[0],
-##         vmax=r[1],
-##         title=f"CNNi {t} t=6h",
-##     )
-##     imcol(
-##         axs[iax, 2],
-##         fc_iter[var].isel(time=0).sel(lead_time=6) - ds_test[var].isel(time=6),
-##         cmap=cmap_error,
-##         title=f"Error CNNi - ERA5 {t} t=6h",
-##     )
-##     imcol(
-##         axs[iax, 3],
-##         fc_iter[var].isel(time=0).sel(lead_time=5 * 24),
-##         cmap=cmap,
-##         vmin=r[0],
-##         vmax=r[1],
-##         title=f"CNNd {t} t=5d",
-##     )
-##     imcol(
-##         axs[iax, 4],
-##         fc_iter[var].isel(time=0).sel(lead_time=5 * 24)
-##         - ds_test[var].isel(time=5 * 24),
-##         cmap=cmap_error,
-##         title=f"Error CNNd - ERA5 {t} t=5d",
-##     )
-## 
-## for ax in axs.flat:
-##     ax.set_xticks([])
-##     ax.set_yticks([])
-## plt.tight_layout(pad=0)
-## # plt.savefig('../figures/examples.pdf', bbox_inches='tight')
-## # plt.savefig('../figures/examples.jpeg', bbox_inches='tight', dpi=300)
-## 
-## # %% [markdown]
-## # # What happens when we iterate for very long times?
-## #
-## # Is the model stable, do the results look sensible?
-## #
-## # PS Don't do this for the whole dataset as it will take a very long time.
-## #
-## # # What could we do to improve this?
-## #
-## # 1. Rewrite the model with residual style blocks, i.e. seek to learn the increment to the current state.
-## #
-## # 2. Use a different type of network?
-## #
-## # 3. Change the hyper-parameters.
-## #
-## # 4. Use a local normalisation (i.e. the local mean & std).
-## #
-## # 5. Use more data?
-## #
-## # 6. Dilated convolutions (need to match with periodic padding)
-## #
-## # 7. Training the model with rollout
-## # [See figure 2](https://arxiv.org/pdf/2202.11214.pdf)
-## #
-## # 8. Train a probabilistic model?
-## #
-## # # Is WeatherBench a useful benchmark problem?
-## #
-## # Can you think of applications for a fairly accurate model, perhaps one with slightly larger error than the IFS.
-## 
-## # One possible configuration of a residual network
-## def build_residual_cnn(filters, kernels, input_shape, dr=0):
-##     """Fully convolutional network"""
-##     x = input = Input(shape=input_shape)
-##     for i, (f, k) in enumerate(zip(filters[:-1], kernels[:-1])):
-##         x_in = x
-##         x = PeriodicConv2D(f, k)(x)
-##         x = LeakyReLU()(x)
-##         if dr > 0:
-##             x = Dropout(dr)(x)
-##         if (i > 0) and (k == kernels[i - 1]):
-##             x = Add()([x_in, x])
-##     output = PeriodicConv2D(filters[-1], kernels[-1])(x)
-##     return keras.models.Model(input, output)
-## 
+#
+# # We can save the weights to load later
+# # cnn.save_weights('test.h5')
+#
+# # Here's one I trained earlier
+# # cnn_long_training.load_weights('cnn_6h.h5')
+#
+# # ## Create predictions
+# #
+# # Now that we have our model we need to create a prediction xarray object. This function does this.
+# #
+# # Depending on the model we trained we might have a model that directly predicts 3/5 days, or one that only predicts in 6hr steps.
+# # With a direct approach, we would use the method below to construct our prediction.
+# #
+# # With the iterative approach we would use `create_iterative_predictions` (see futher below) to iterate foreward to our desired lead times.
+#
+#
+# def create_predictions(model, dg):
+#     """Create predictions for non-iterative model"""
+#     preds = model.predict_generator(dg)
+#     # Unnormalize
+#     preds = preds * dg.std.values + dg.mean.values
+#     fcs = []
+#     lev_idx = 0
+#     for var, levels in dg.var_dict.items():
+#         if levels is None:
+#             fcs.append(
+#                 xr.DataArray(
+#                     preds[:, :, :, lev_idx],
+#                     dims=["time", "lat", "lon"],
+#                     coords={"time": dg.valid_time, "lat": dg.ds.lat, "lon": dg.ds.lon},
+#                     name=var,
+#                 )
+#             )
+#             lev_idx += 1
+#         else:
+#             nlevs = len(levels)
+#             fcs.append(
+#                 xr.DataArray(
+#                     preds[:, :, :, lev_idx : lev_idx + nlevs],
+#                     dims=["time", "lat", "lon", "level"],
+#                     coords={
+#                         "time": dg.valid_time,
+#                         "lat": dg.ds.lat,
+#                         "lon": dg.ds.lon,
+#                         "level": levels,
+#                     },
+#                     name=var,
+#                 )
+#             )
+#             lev_idx += nlevs
+#     return xr.merge(fcs)
+#
+#
+# # We won't use this here as we've made a model designed to predict only 6hr forward, so we will need to chain predictions together to reach 3 & 5 days.
+#
+# # fc = create_predictions(cnn, dg_test)
+# # compute_weighted_rmse(fc, valid).compute()
+#
+# # Here create a function for creating predictions for longer lead times by chaining increments together.
+# def create_iterative_predictions(model, dg, max_lead_time=5 * 24):
+#     state = dg.data[: dg.n_samples]
+#     preds = []
+#     # Do the prediction
+#     for _ in tqdm(range(max_lead_time // dg.lead_time)):
+#         state = model.predict(state)
+#         p = state * dg.std.values + dg.mean.values
+#         preds.append(p)
+#     preds = np.array(preds)
+#
+#     # Create the xarray object
+#     lead_time = np.arange(dg.lead_time, max_lead_time + dg.lead_time, dg.lead_time)
+#     das = []
+#     lev_idx = 0
+#     for var, levels in dg.var_dict.items():
+#         if levels is None:
+#             das.append(
+#                 xr.DataArray(
+#                     preds[:, :, :, :, lev_idx],
+#                     dims=["lead_time", "time", "lat", "lon"],
+#                     coords={
+#                         "lead_time": lead_time,
+#                         "time": dg.init_time,
+#                         "lat": dg.ds.lat,
+#                         "lon": dg.ds.lon,
+#                     },
+#                     name=var,
+#                 )
+#             )
+#             lev_idx += 1
+#         else:
+#             nlevs = len(levels)
+#             das.append(
+#                 xr.DataArray(
+#                     preds[:, :, :, :, lev_idx : lev_idx + nlevs],
+#                     dims=["lead_time", "time", "lat", "lon", "level"],
+#                     coords={
+#                         "lead_time": lead_time,
+#                         "time": dg.init_time,
+#                         "lat": dg.ds.lat,
+#                         "lon": dg.ds.lon,
+#                         "level": levels,
+#                     },
+#                     name=var,
+#                 )
+#             )
+#             lev_idx += nlevs
+#     return xr.merge(das)
+#
+#
+# # %% [markdown]
+# # ### Let's evalute our model on the test set.
+# # We'll roll the model out for 5 days and evaluate it.
+#
+# # %%
+# fc_iter = create_iterative_predictions(cnn, dg_test)
+#
+# # %%
+# rmse = evaluate_iterative_forecast(fc_iter, ds_test, func=compute_weighted_rmse)
+# rmse.load()
+#
+# # %% [markdown]
+# # ### Let's look at the error at 3 days
+#
+# # %%
+# display(rmse.sel(lead_time=3 * 24))
+#
+# # %% [markdown]
+# # ### Plot the headline scores against a few benchmarks
+#
+# # %%
+# rmse.z.plot(label="CNN")
+# plt.plot([3 * 24, 5 * 24], [154, 334], "x", label="Operational IFS", markersize=8)
+# plt.plot([3 * 24, 5 * 24], [489, 743], ".", label="T42 IFS", markersize=8)
+# plt.plot([3 * 24, 5 * 24], [175, 350], "o", label="Keisler GNN (2022)", markersize=8)
+# plt.legend()
+#
+# # %% [markdown]
+# # ### Our model lags a long way behind the Operational IFS.
+# #
+# # However as you can see, [Keisler's GraphNN](https://arxiv.org/pdf/2202.07575) produced very comparable values. However there are some caveats with that work, as you integrate forward in time the images become blurred, scoring very well on RMSE but not capturing extreme values. More work will be required to establish if ML can produce sharp yet well scoring predictions.
+# #
+# # Note that the test sets are not identical between our experiments and the others (due to time constraints), but we would expect to see only small differences with a different test set.
+# #
+# # ### Let's visualise our prediction
+# #
+# # This plotting is taken from [here](https://github.com/pangeo-data/WeatherBench/blob/master/notebooks/4-evaluation.ipynb), where Rasp et al. show how to do a complete evaluation of a model.
+#
+# import warnings
+#
+# # %%
+# import cartopy.crs as ccrs
+# import matplotlib.cbook
+#
+# warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
+#
+# cmap_z = "cividis"
+# cmap_t = "RdYlBu_r"
+# cmap_diff = "bwr"
+# cmap_error = "BrBG"
+#
+#
+# def imcol(ax, data, title="", **kwargs):
+#     if not "vmin" in kwargs.keys():
+#         mx = np.abs(data.max().values)
+#         kwargs["vmin"] = -mx
+#         kwargs["vmax"] = mx
+#     #     I = ax.imshow(data, origin='lower',  **kwargs)
+#     I = data.plot(
+#         ax=ax,
+#         transform=ccrs.PlateCarree(),
+#         add_colorbar=False,
+#         add_labels=False,
+#         rasterized=True,
+#         **kwargs,
+#     )
+#     cb = fig.colorbar(I, ax=ax, orientation="horizontal", pad=0.01, shrink=0.90)
+#     ax.set_title(title)
+#     ax.coastlines(alpha=0.5)
+#     return
+#
+#
+# fig, axs = plt.subplots(
+#     2, 5, figsize=(18, 8), subplot_kw={"projection": ccrs.PlateCarree()}
+# )
+# # True
+# for iax, var, cmap, r, t in zip(
+#     [0], ["z"], [cmap_z], [[47000, 58000]], [r"Z500 [m$^2$ s$^{-2}$]"]
+# ):
+#     imcol(
+#         axs[iax, 0],
+#         ds_test[var].isel(time=0),
+#         cmap=cmap,
+#         vmin=r[0],
+#         vmax=r[1],
+#         title=f"ERA5 {t} t=0h",
+#     )
+#     imcol(
+#         axs[iax, 1],
+#         ds_test[var].isel(time=6),
+#         cmap=cmap,
+#         vmin=r[0],
+#         vmax=r[1],
+#         title=f"ERA5 {t} t=6h",
+#     )
+#     imcol(
+#         axs[iax, 2],
+#         ds_test[var].isel(time=6) - ds_test[var].isel(time=0),
+#         cmap=cmap_diff,
+#         title=f"ERA5 {t} diff (6h-0h)",
+#     )
+#     imcol(
+#         axs[iax, 3],
+#         ds_test[var].isel(time=5 * 24),
+#         cmap=cmap,
+#         vmin=r[0],
+#         vmax=r[1],
+#         title=f"ERA5 {t} t=5d",
+#     )
+#     imcol(
+#         axs[iax, 4],
+#         ds_test[var].isel(time=5 * 24) - ds_test[var].isel(time=0),
+#         cmap=cmap_diff,
+#         title=f"ERA5 {t} diff (5d-0h)",
+#     )
+#
+# # CNN
+# for iax, var, cmap, r, t in zip(
+#     [1], ["z"], [cmap_z], [[47000, 58000]], [r"Z500 [m$^2$ s$^{-2}$]"]
+# ):
+#     imcol(
+#         axs[iax, 0],
+#         ds_test[var].isel(time=0),
+#         cmap=cmap,
+#         vmin=r[0],
+#         vmax=r[1],
+#         title=f"ERA5 {t} t=0h",
+#     )
+#     imcol(
+#         axs[iax, 1],
+#         fc_iter[var].isel(time=0).sel(lead_time=6),
+#         cmap=cmap,
+#         vmin=r[0],
+#         vmax=r[1],
+#         title=f"CNNi {t} t=6h",
+#     )
+#     imcol(
+#         axs[iax, 2],
+#         fc_iter[var].isel(time=0).sel(lead_time=6) - ds_test[var].isel(time=6),
+#         cmap=cmap_error,
+#         title=f"Error CNNi - ERA5 {t} t=6h",
+#     )
+#     imcol(
+#         axs[iax, 3],
+#         fc_iter[var].isel(time=0).sel(lead_time=5 * 24),
+#         cmap=cmap,
+#         vmin=r[0],
+#         vmax=r[1],
+#         title=f"CNNd {t} t=5d",
+#     )
+#     imcol(
+#         axs[iax, 4],
+#         fc_iter[var].isel(time=0).sel(lead_time=5 * 24)
+#         - ds_test[var].isel(time=5 * 24),
+#         cmap=cmap_error,
+#         title=f"Error CNNd - ERA5 {t} t=5d",
+#     )
+#
+# for ax in axs.flat:
+#     ax.set_xticks([])
+#     ax.set_yticks([])
+# plt.tight_layout(pad=0)
+# # plt.savefig('../figures/examples.pdf', bbox_inches='tight')
+# # plt.savefig('../figures/examples.jpeg', bbox_inches='tight', dpi=300)
+#
+# # %% [markdown]
+# # # What happens when we iterate for very long times?
+# #
+# # Is the model stable, do the results look sensible?
+# #
+# # PS Don't do this for the whole dataset as it will take a very long time.
+# #
+# # # What could we do to improve this?
+# #
+# # 1. Rewrite the model with residual style blocks, i.e. seek to learn the increment to the current state.
+# #
+# # 2. Use a different type of network?
+# #
+# # 3. Change the hyper-parameters.
+# #
+# # 4. Use a local normalisation (i.e. the local mean & std).
+# #
+# # 5. Use more data?
+# #
+# # 6. Dilated convolutions (need to match with periodic padding)
+# #
+# # 7. Training the model with rollout
+# # [See figure 2](https://arxiv.org/pdf/2202.11214.pdf)
+# #
+# # 8. Train a probabilistic model?
+# #
+# # # Is WeatherBench a useful benchmark problem?
+# #
+# # Can you think of applications for a fairly accurate model, perhaps one with slightly larger error than the IFS.
+#
+# # One possible configuration of a residual network
+# def build_residual_cnn(filters, kernels, input_shape, dr=0):
+#     """Fully convolutional network"""
+#     x = input = Input(shape=input_shape)
+#     for i, (f, k) in enumerate(zip(filters[:-1], kernels[:-1])):
+#         x_in = x
+#         x = PeriodicConv2D(f, k)(x)
+#         x = LeakyReLU()(x)
+#         if dr > 0:
+#             x = Dropout(dr)(x)
+#         if (i > 0) and (k == kernels[i - 1]):
+#             x = Add()([x_in, x])
+#     output = PeriodicConv2D(filters[-1], kernels[-1])(x)
+#     return keras.models.Model(input, output)
+#

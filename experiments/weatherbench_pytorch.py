@@ -16,25 +16,26 @@ import pandas as pd
 import seaborn as sns
 import torch
 import xarray as xr
+from climetlab.profiling import print_counters
 from torch import nn
 from tqdm import tqdm
-
 from weatherbench_common import MyDataset
 
+# import climetlab.debug
 
 # ds = cml.load_dataset( 'weatherbench', parameter = "geopotential_500", year = list(range(2015,2019)),).to_xarray()
 ds = MyDataset(
     "directory",
     "/perm/mafp/weather-bench-links/data-from-mat-chantry-symlinks-to-files",
-    #"/perm/mafp/weather-bench-links/data-from-mat-chantry-symlinks-to-files-2015-2016-2017-2018/grib",
-    param="z",
-    level="500",
+    # "/perm/mafp/weather-bench-links/data-from-mat-chantry-symlinks-to-files-2015-2016-2017-2018/grib",
+    variable="z",
+    levelist="500",
 )
 # ds = xr.open_mfdataset('/perm/mafp/weather-bench-links/data-from-mihai-alexe/netcdf/pl_*.nc')
 ds_train = ds.sel(time=slice("2015", "2016"))
 ds_valid = ds.sel(time=slice("2017", "2017"))
 # For speed of testing just look at the first few months of 2018
-ds_test = ds.sel(time=slice("2018", "2018"))  # .isel(time=range(0,2000))
+# ds_test = ds.sel(time=slice("2018", "2018"))  # .isel(time=range(0,2000))
 
 # What size of batch do we want to use?
 batch_size = 32
@@ -44,7 +45,7 @@ batch_size = 32
 
 
 def stats():
-    print(stats)
+    # print(stats)
     ds_train.source.statistics()
     ds_train.mean = ds_train.source.statistics()["average"]
     ds_train.std = ds_train.source.statistics()["stdev"]
@@ -55,35 +56,35 @@ def stats():
     # dg_valid = ds_valid.to_tfdataset(normalise=lambda x:(x-ds_train.mean)/ds_train.std)
 
 
-ds_train = ds_train.to_pytorch(offset=3)
-ds_test = ds_test.to_pytorch(offset=3)
-ds_valid = ds_valid.to_pytorch(offset=3)
+dl_train = ds_train.to_pytorch(offset=3)
+# dl_test = ds_test.to_pytorch(offset=3)
+dl_valid = ds_valid.to_pytorch(offset=3)
 
 # train and validation dataloaders
-dl_train = torch.utils.data.DataLoader(
-    ds_train,
-    batch_size=128,
-    # multi-process data loading
-    # use as many workers as you have cores on your machine
-    num_workers=8,
-    # default: no shuffle, so need to explicitly set it here
-    shuffle=True,
-    # uses pinned memory to speed up CPU-to-GPU data transfers
-    # see https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-pinning
-    pin_memory=True,
-    # function used to collate samples into batches
-    # if None then Pytorch uses the default collate_fn (see below)
-    collate_fn=None,
-)
-
-dl_valid = torch.utils.data.DataLoader(
-    ds_valid,
-    batch_size=128,
-    num_workers=8,
-    shuffle=False,
-    pin_memory=True,
-    collate_fn=None,
-)
+# dl_train = torch.utils.data.DataLoader(
+#    ds_train,
+#    batch_size=128,
+#    # multi-process data loading
+#    # use as many workers as you have cores on your machine
+#    num_workers=8,
+#    # default: no shuffle, so need to explicitly set it here
+#    shuffle=True,
+#    # uses pinned memory to speed up CPU-to-GPU data transfers
+#    # see https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-pinning
+#    pin_memory=True,
+#    # function used to collate samples into batches
+#    # if None then Pytorch uses the default collate_fn (see below)
+#    collate_fn=None,
+# )
+#
+# dl_valid = torch.utils.data.DataLoader(
+#    ds_valid,
+#    batch_size=128,
+#    num_workers=8,
+#    shuffle=False,
+#    pin_memory=True,
+#    collate_fn=None,
+# )
 
 
 class ResidualBlock(nn.Module):
@@ -149,8 +150,8 @@ class ResidualBlock(nn.Module):
 
 res_block = ResidualBlock(32, 32)
 
-for p in res_block.parameters():
-    print(p.shape, p.requires_grad)
+# for p in res_block.parameters():
+#    print(p.shape, p.requires_grad)
 
 
 class WBModel(nn.Module):
@@ -160,11 +161,11 @@ class WBModel(nn.Module):
         self._resnet = nn.Sequential(
             *[
                 ResidualBlock(
-                    1, 32
+                    1, 2
                 ),  # input tensor: [batch_size, 1, H, W]  -> [batch_size, 32, H, W]
                 # ResidualBlock(32, 32),
                 # ResidualBlock(32, 32),
-                ResidualBlock(32, 1),
+                ResidualBlock(2, 1),
             ]
         )
 
@@ -173,12 +174,45 @@ class WBModel(nn.Module):
         return self._resnet(x)
 
 
-# Sanity check:
-def check():
+import gc
+import os
+import sys
+
+import psutil
+
+# def memReport():
+#    for obj in gc.get_objects():
+#        if torch.is_tensor(obj):
+#            print(type(obj), obj.size())
+
+
+def cpuStats():
+    print(sys.version)
+    print(psutil.cpu_percent())
+    print(psutil.virtual_memory())  # physical memory usage
+    pid = os.getpid()
+    py = psutil.Process(pid)
+    memoryUse = py.memory_info()[0] / 2.0**30  # memory use in GB...I think
+    print("memory GB:", memoryUse)
+
+
+import datetime
+
+
+def training():
+    print("training")
+    test_model = WBModel()
     for X, y in dl_train:
-        test_model = WBModel()
+        print(datetime.datetime.now())
+
+        #        cpuStats()
+        ##        memReport()
         y_pred = test_model(X)  # calls forward()
-        print("Checking shape", y_pred.shape)
+        print(datetime.datetime.now())
+        print("--")
 
 
-check()
+training()
+training()
+training()
+print_counters()
