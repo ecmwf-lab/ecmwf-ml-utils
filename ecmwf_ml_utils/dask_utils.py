@@ -221,10 +221,10 @@ class CustomSshClient(Client):
     # Fractions of worker process memory at which we take action to avoid memory
     # blowup. Set any of the values to False to turn off the behavior entirely.
         memory:
-        target: 0.60     # fraction of managed memory where we start spilling to disk
-        spill: 0.70      # fraction of process memory where we start spilling to disk
-        pause: 0.80      # fraction of process memory at which we pause worker threads
-        terminate: 0.95  # fraction of process memory at which we terminate the worker
+        target: fraction of managed memory where we start spilling to disk
+        spill: fraction of process memory where we start spilling to disk
+        pause: fraction of process memory at which we pause worker threads ("False" means do not pause)
+        terminate: fraction of process memory at which we terminate the worker ("False" means do not terminate)
     """
 
         dask.config.set(
@@ -233,7 +233,7 @@ class CustomSshClient(Client):
                 "distributed.scheduler.unknown-task-duration": "10s",
                 # worker memory management
                 "distributed.worker.memory.target": 0.92,
-                "distributed.worker.memory.target": 0.92,
+                "distributed.worker.memory.spill": 0.92,
                 "distributed.worker.memory.pause": False,
                 "distributed.worker.memory.terminate": False,
             }
